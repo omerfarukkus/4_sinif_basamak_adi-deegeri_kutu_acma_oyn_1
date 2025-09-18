@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Basamak Değeri - Kutuyu Aç Oyunu</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Quicksand', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .box {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            cursor: pointer;
+        }
+        .box:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        .box.opened {
+            transform: scale(0.9);
+            opacity: 0.5;
+            cursor: not-allowed;
+            background-color: #6b7280 !important;
+        }
+        #question-modal {
+            transition: opacity 0.3s ease-in-out;
+        }
+        .option-btn {
+            transition: background-color 0.2s, transform 0.2s;
+        }
+        .option-btn:hover {
+            transform: translateY(-2px);
+        }
+        .notification {
+            animation: fadeInOut 2s forwards;
+        }
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0; transform: translateY(20px); }
+            10%, 90% { opacity: 1; transform: translateY(0); }
+        }
+        .chalkboard {
+            background-color: #2c3e50;
+            border: 8px solid #8B5A2B;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5) inset;
+        }
+    </style>
+</head>
+<body class="text-white flex items-center justify-center min-h-screen p-4">
+
+    <div id="game-container" class="w-full max-w-4xl mx-auto">
+        <!-- Başlangıç Ekranı -->
+        <div id="start-screen" class="text-center p-8 bg-black bg-opacity-30 rounded-2xl shadow-lg">
+            <h1 class="text-4xl md:text-5xl font-bold mb-4">Basamak Değeri Macerası</h1>
+            <p class="text-lg md:text-xl mb-8">Kutuları aç, soruları doğru yanıtla ve oyunu tamamla!</p>
+            <button id="start-button" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg transition-transform transform hover:scale-105">
+                Oyuna Başla
+            </button>
+        </div>
+
+        <!-- Oyun Ekranı -->
+        <div id="game-screen" class="hidden">
+            <div class="flex justify-between items-center mb-6 p-4 bg-black bg-opacity-20 rounded-xl">
+                <h1 class="text-2xl font-bold">Kutunu Seç!</h1>
+                <div id="lives-container" class="flex items-center space-x-2">
+                    <span class="font-bold text-lg">Can:</span>
+                    <!-- Canlar buraya eklenecek -->
+                </div>
+            </div>
+            <div id="game-board" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                <!-- Kutular buraya eklenecek -->
+            </div>
+        </div>
+
+        <!-- Bitiş Ekranı -->
+        <div id="end-screen" class="hidden text-center p-8 bg-black bg-opacity-30 rounded-2xl shadow-lg">
+            <h1 id="end-title" class="text-4xl md:text-5xl font-bold mb-4">Oyun Bitti!</h1>
+            <p id="end-message" class="text-lg md:text-xl mb-8">Harika iş çıkardın!</p>
+            <button id="restart-button" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg transition-transform transform hover:scale-105">
+                Tekrar Oyna
+            </button>
+        </div>
+
+    </div>
+
+    <!-- Soru Modalı -->
+    <div id="question-modal" class="hidden fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50">
+        <div class="chalkboard text-white p-8 rounded-2xl shadow-2xl w-full max-w-lg text-center transform scale-95 transition-transform duration-300">
+            <p id="question-text" class="text-2xl font-bold mb-8"></p>
+            <div id="options-container" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Seçenekler buraya eklenecek -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Bildirim -->
+    <div id="notification-container" class="fixed bottom-5 right-5 z-50"></div>
+
+
+    <script>
+        const startScreen = document.getElementById('start-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const endScreen = document.getElementById('end-screen');
+        const startButton = document.getElementById('start-button');
+        const restartButton = document.getElementById('restart-button');
+        const gameBoard = document.getElementById('game-board');
+        const livesContainer = document.getElementById('lives-container');
+        const questionModal = document.getElementById('question-modal');
+        const questionText = document.getElementById('question-text');
+        const optionsContainer = document.getElementById('options-container');
+        const notificationContainer = document.getElementById('notification-container');
+        const endTitle = document.getElementById('end-title');
+        const endMessage = document.getElementById('end-message');
+
+        const TOTAL_LIVES = 4;
+        const TOTAL_QUESTIONS = 12;
+        let lives;
+        let questions = [];
+        let openedBoxes = 0;
+
+        const placeNames = {
+            0: "birler", 1: "onlar", 2: "yüzler", 3: "binler", 4: "on binler", 5: "yüz binler"
+        };
+        
+        // --- SORU ÜRETME FONKSİYONLARI ---
+
+        function getRandomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+        
+        function formatNumber(num) {
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+        }
+
+        function generatePlaceValueQuestion() {
+            const numDigits = getRandomInt(4, 6);
+            const num = getRandomInt(Math.pow(10, numDigits - 1), Math.pow(10, numDigits) - 1);
+            const numStr = num.toString();
+            const digitIndex = getRandomInt(0, numStr.length - 1);
+            const placeIndex = numStr.length - 1 - digitIndex;
+            const digit = parseInt(numStr[digitIndex]);
+            const placeName = placeNames[placeIndex];
+
+            const question = `${formatNumber(num)} sayısının ${placeName} basamağındaki rakamın basamak değeri kaçtır?`;
+            const correctAnswer = digit * Math.pow(10, placeIndex);
+
+            const options = new Set([correctAnswer]);
+            while (options.size < 4) {
+                const wrongAnswerType = getRandomInt(1, 2);
+                let wrongAnswer;
+                if (wrongAnswerType === 1) { // Yanlış basamak
+                    const wrongPlaceIndex = (placeIndex + getRandomInt(1, 3)) % numStr.length;
+                    wrongAnswer = digit * Math.pow(10, wrongPlaceIndex);
+                } else { // Yanlış rakam
+                    wrongAnswer = ((digit + getRandomInt(1, 5)) % 10) * Math.pow(10, placeIndex);
+                }
+                if(wrongAnswer !== correctAnswer) options.add(wrongAnswer);
+            }
+            return { question, options: Array.from(options), answer: correctAnswer };
+        }
+
+        function generateDigitValueQuestion() {
+             const numDigits = getRandomInt(4, 6);
+            const num = getRandomInt(Math.pow(10, numDigits - 1), Math.pow(10, numDigits) - 1);
+            const numStr = num.toString();
+            const digitIndex = getRandomInt(0, numStr.length - 1);
+            const placeIndex = numStr.length - 1 - digitIndex;
+            const digit = parseInt(numStr[digitIndex]);
+            const placeName = placeNames[placeIndex];
+
+            const question = `${formatNumber(num)} sayısının ${placeName} basamağındaki rakamın sayı değeri kaçtır?`;
+            const correctAnswer = digit;
+
+            const options = new Set([correctAnswer]);
+            while(options.size < 4) {
+                options.add(getRandomInt(0,9));
+            }
+            return { question, options: Array.from(options), answer: correctAnswer };
+        }
+
+        function generateSumOfDigitsQuestion() {
+            const numDigits = getRandomInt(5, 6);
+            const num = getRandomInt(Math.pow(10, numDigits - 1), Math.pow(10, numDigits) - 1);
+            const numStr = num.toString();
+
+            const index1 = getRandomInt(0, numStr.length - 1);
+            let index2 = getRandomInt(0, numStr.length - 1);
+            while (index1 === index2) {
+                index2 = getRandomInt(0, numStr.length - 1);
+            }
+            
+            const placeIndex1 = numStr.length - 1 - index1;
+            const placeIndex2 = numStr.length - 1 - index2;
+
+            const digit1 = parseInt(numStr[index1]);
+            const digit2 = parseInt(numStr[index2]);
+            
+            const placeName1 = placeNames[placeIndex1];
+            const placeName2 = placeNames[placeIndex2];
+
+            const question = `${formatNumber(num)} sayısında ${placeName1} ve ${placeName2} basamağındaki rakamların sayı değerleri toplamı kaçtır?`;
+            const correctAnswer = digit1 + digit2;
+            
+            const options = new Set([correctAnswer]);
+            while(options.size < 4) {
+                const wrongAnswer = correctAnswer + getRandomInt(-5, 5);
+                if (wrongAnswer !== correctAnswer && wrongAnswer >= 0) {
+                    options.add(wrongAnswer);
+                }
+            }
+            return { question, options: Array.from(options), answer: correctAnswer };
+        }
+        
+        function generateExpandedFormQuestion() {
+            const digits = {
+                'on binlik': getRandomInt(1, 9),
+                'binlik': getRandomInt(0, 9),
+                'yüzlük': getRandomInt(0, 9),
+                'onluk': getRandomInt(0, 9),
+                'birlik': getRandomInt(0, 9)
+            };
+
+            const parts = Object.entries(digits).filter(([key, value]) => value > 0);
+            parts.sort(() => Math.random() - 0.5); // shuffle
+            const questionString = parts.map(([key, value]) => `${value} ${key}`).join(' + ');
+
+            const question = `${questionString} şeklinde çözümlenmiş sayı kaçtır?`;
+            const correctAnswer = digits['on binlik'] * 10000 + digits['binlik'] * 1000 + digits['yüzlük'] * 100 + digits['onluk'] * 10 + digits['birlik'] * 1;
+
+            const options = new Set([correctAnswer]);
+            while (options.size < 4) {
+                const shuffledDigits = { ...digits };
+                // Rakamların yerini değiştirerek yanlış cevap üret
+                const keys = Object.keys(shuffledDigits);
+                const key1 = keys[Math.floor(Math.random() * keys.length)];
+                let key2 = keys[Math.floor(Math.random() * keys.length)];
+                while(key1 === key2) { key2 = keys[Math.floor(Math.random() * keys.length)]; }
+                [shuffledDigits[key1], shuffledDigits[key2]] = [shuffledDigits[key2], shuffledDigits[key1]];
+
+                const wrongAnswer = shuffledDigits['on binlik'] * 10000 + shuffledDigits['binlik'] * 1000 + shuffledDigits['yüzlük'] * 100 + shuffledDigits['onluk'] * 10 + shuffledDigits['birlik'] * 1;
+                if (wrongAnswer !== correctAnswer) {
+                    options.add(wrongAnswer);
+                }
+            }
+            return { question, options: Array.from(options), answer: correctAnswer };
+        }
+
+        // --- OYUN MANTIĞI ---
+
+        function createQuestions() {
+            questions = [];
+            const questionGenerators = [
+                generatePlaceValueQuestion,
+                generateDigitValueQuestion,
+                generateSumOfDigitsQuestion,
+                generateExpandedFormQuestion
+            ];
+            for (let i = 0; i < TOTAL_QUESTIONS; i++) {
+                const generator = questionGenerators[i % questionGenerators.length];
+                questions.push(generator());
+            }
+        }
+
+        function initGame() {
+            startScreen.classList.add('hidden');
+            endScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+
+            lives = TOTAL_LIVES;
+            openedBoxes = 0;
+            updateLives();
+            createQuestions();
+
+            gameBoard.innerHTML = '';
+            const boxColors = ['bg-blue-500', 'bg-green-500', 'bg-red-500', 'bg-yellow-500', 'bg-indigo-500', 'bg-pink-500', 'bg-purple-500', 'bg-teal-500', 'bg-orange-500', 'bg-cyan-500', 'bg-lime-500', 'bg-fuchsia-500'];
+            
+            questions.forEach((q, index) => {
+                const box = document.createElement('div');
+                box.className = `box flex items-center justify-center text-4xl font-bold rounded-lg shadow-md aspect-square ${boxColors[index % boxColors.length]}`;
+                box.textContent = index + 1;
+                box.dataset.questionIndex = index;
+                box.addEventListener('click', () => handleBoxClick(box, q));
+                gameBoard.appendChild(box);
+            });
+        }
+
+        function updateLives() {
+            livesContainer.innerHTML = '<span class="font-bold text-lg">Can:</span>';
+            for (let i = 0; i < TOTAL_LIVES; i++) {
+                const heart = document.createElement('span');
+                heart.textContent = '❤️';
+                if (i >= lives) {
+                    heart.style.opacity = '0.3';
+                }
+                livesContainer.appendChild(heart);
+            }
+        }
+        
+        function handleBoxClick(box, questionData) {
+            if (box.classList.contains('opened')) return;
+
+            questionText.textContent = questionData.question;
+            optionsContainer.innerHTML = '';
+            
+            const shuffledOptions = [...questionData.options].sort(() => Math.random() - 0.5);
+
+            const optionColors = [
+                { bg: 'bg-blue-500', hover: 'hover:bg-blue-600' },
+                { bg: 'bg-green-500', hover: 'hover:bg-green-600' },
+                { bg: 'bg-red-500', hover: 'hover:bg-red-600' },
+                { bg: 'bg-yellow-500', hover: 'hover:bg-yellow-600' }
+            ];
+
+            shuffledOptions.forEach((option, index) => {
+                const button = document.createElement('button');
+                const color = optionColors[index % optionColors.length];
+                button.className = `option-btn ${color.bg} ${color.hover} text-white font-bold py-4 px-6 rounded-lg text-lg shadow-md`;
+                button.textContent = formatNumber(option);
+                button.onclick = () => checkAnswer(option, questionData.answer, box);
+                optionsContainer.appendChild(button);
+            });
+
+            questionModal.classList.remove('hidden');
+            setTimeout(() => {
+                questionModal.querySelector('div').classList.remove('scale-95');
+                questionModal.querySelector('div').classList.add('scale-100');
+            }, 10);
+        }
+
+        function checkAnswer(selected, correct, box) {
+            box.classList.add('opened');
+            openedBoxes++;
+
+            if (selected === correct) {
+                showNotification('DOĞRU!', 'bg-green-600');
+            } else {
+                lives--;
+                updateLives();
+                showNotification('YANLIŞ!', 'bg-red-600');
+            }
+            
+            closeModal();
+            
+            setTimeout(() => {
+                 if (lives <= 0) {
+                    endGame(false);
+                } else if (openedBoxes === TOTAL_QUESTIONS) {
+                    endGame(true);
+                }
+            }, 500);
+        }
+        
+        function closeModal() {
+             questionModal.querySelector('div').classList.remove('scale-100');
+             questionModal.querySelector('div').classList.add('scale-95');
+             setTimeout(() => {
+                questionModal.classList.add('hidden');
+             }, 300);
+        }
+
+        function showNotification(message, bgColor) {
+            const notif = document.createElement('div');
+            notif.className = `notification text-white font-bold py-3 px-6 rounded-full shadow-lg ${bgColor}`;
+            notif.textContent = message;
+            notificationContainer.appendChild(notif);
+            setTimeout(() => {
+                notif.remove();
+            }, 2000);
+        }
+
+        function endGame(isWin) {
+            gameScreen.classList.add('hidden');
+            endScreen.classList.remove('hidden');
+            if(isWin) {
+                endTitle.textContent = "🎉 Tebrikler, Kazandın! 🎉";
+                endMessage.textContent = "Tüm soruları doğru cevapladın. Harikasın!";
+            } else {
+                endTitle.textContent = "😕 Oyun Bitti 😕";
+                endMessage.textContent = "Canların tükendi. Tekrar denemek ister misin?";
+            }
+        }
+
+
+        startButton.addEventListener('click', initGame);
+        restartButton.addEventListener('click', initGame);
+
+    </script>
+</body>
+</html>
+
